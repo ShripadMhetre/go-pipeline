@@ -1,26 +1,67 @@
 package gopipeline
 
-import "sync"
+import (
+	"log"
+	"sync"
+)
 
 type Stage interface {
-	Process(stage dispatch) ([]dispatch, error)
+	Process(stage Dispatch) ([]Dispatch, error)
 }
 
 type StageWorker struct {
 	wg          *sync.WaitGroup
-	input       chan dispatch
-	output      chan dispatch
+	in          chan Dispatch
+	out         chan Dispatch
 	concurrency int
-	pipe        Stage
+	stage       Stage
 }
 
-func NewWorkerGroup(concurrency int, pipe Stage, input chan dispatch, output chan dispatch) StageWorker {
+// Constructor function - StageWorker
+func NewStageWorker(concurrency int, stage Stage, input chan Dispatch, output chan Dispatch) StageWorker {
 	return StageWorker{
 		wg:          &sync.WaitGroup{},
-		input:       input,
-		output:      output,
+		in:          input,
+		out:         output,
 		concurrency: concurrency,
-		pipe:        pipe,
+		stage:       stage,
 	}
 
+}
+
+func (w *StageWorker) Start() error {
+
+	for i := 0; i < w.concurrency; i++ {
+		w.wg.Add(1)
+
+		go func() {
+			defer w.wg.Done()
+			for i := range w.Input() {
+				result, err := w.stage.Process(i)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				for _, r := range result {
+					w.Output() <- r
+				}
+			}
+		}()
+	}
+
+	return nil
+
+}
+
+func (w *StageWorker) WaitStop() error {
+	w.wg.Wait()
+	return nil
+}
+
+func (w *StageWorker) Input() chan Dispatch {
+	return w.in
+}
+
+func (w *StageWorker) Output() chan Dispatch {
+	return w.out
 }
